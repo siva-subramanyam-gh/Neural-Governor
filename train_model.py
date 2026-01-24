@@ -8,7 +8,7 @@ from sklearn.metrics import mean_squared_error,r2_score
 def train_brain():
     print("----Neural Governer:Training Phase")
     try:
-        df=pd.read_csv("train_processed_data.csv")
+        df=pd.read_csv("train_augmented_data.csv")
     except Exception:
         print("Preprocessed data not found.Please run preprocess.py first!")
         return

@@ -12,7 +12,7 @@ def predict_future():
         return
     print("----The Oracle:Predicting the Future----")
     start_temp=32.0
-    stress_load=1.8
+    stress_load=1.2
     duration_sec=600
     step_size=2
     current_temp=start_temp
