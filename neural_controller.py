@@ -1,190 +1,238 @@
-import time
 import subprocess
+import time
 import sys
-import os
+import numpy as np
+import joblib  # <--- CHANGED: Using joblib as requested
+import warnings
+
+# Suppress sklearn warnings if version mismatch occurs
+warnings.filterwarnings("ignore")
 
 # ==========================================
-# CONFIGURATION
-# ==========================================
-# We auto-detect this now, but you can force it here if needed
-ADB_OVERRIDE = None 
-
-# Snapdragon 8s Gen 3 Frequency Map
-CLUSTERS = {
-    "prime": "/sys/devices/system/cpu/cpufreq/policy7/scaling_max_freq",
-    "perf":  "/sys/devices/system/cpu/cpufreq/policy3/scaling_max_freq",
-    "eff":   "/sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq"
-}
-
-GEARS = {
-    # Gear 1: Cool Down (Emergency)
-    1: {"prime": 1094400, "perf": 1056000, "eff": 902400},   
-    # Gear 2: Braking (Throttling)
-    2: {"prime": 1900800, "perf": 1708800, "eff": 1228800},  
-    # Gear 3: Sustainable Gaming (High Load)
-    3: {"prime": 2457600, "perf": 2188800, "eff": 1593600},  
-    # Gear 4: Turbo (Max Available on Neoteric)
-    4: {"prime": 2918400, "perf": 2707200, "eff": 2016000}   
-}
-
-# ==========================================
-# MODULE 1: OS INTERFACE (SMART EDITION)
-# ==========================================
-class PhoneInterface:
-    def __init__(self):
-        self.adb_cmd = self.find_working_adb()
-        self.check_connection()
-        self.current_gear = 4
-    
-    def find_working_adb(self):
-        """Finds ADB whether it's global or local."""
-        # 1. Try Local File first (Most reliable for your setup)
-        if os.path.exists("./adb"):
-            return "./adb"
-        
-        # 2. Try Global Command
-        try:
-            subprocess.check_output("adb version", shell=True, stderr=subprocess.STDOUT)
-            return "adb"
-        except:
-            pass
-            
-        print("CRITICAL ERROR: Could not find 'adb'. Put the adb file in this folder.")
-        sys.exit(1)
-
-    def run_adb(self, cmd):
-        full_cmd = f"{self.adb_cmd} shell \"{cmd}\""
-        try:
-            result = subprocess.check_output(full_cmd, shell=True, stderr=subprocess.STDOUT)
-            return result.decode("utf-8").strip()
-        except subprocess.CalledProcessError:
-            return None
-
-    def check_connection(self):
-        try:
-            # Use the detected adb command
-            cmd = f"{self.adb_cmd} devices"
-            res = subprocess.check_output(cmd, shell=True).decode()
-            if "device" not in res.splitlines()[1]: 
-                raise Exception("Device not found")
-            print(f"Phone Connected (Using: {self.adb_cmd})")
-        except:
-            print(f"Error: Phone not connected.")
-            sys.exit(1)
-
-    def get_temp(self):
-        try:
-            # METHOD: dumpsys battery (Bypasses Permission Denied)
-            output = self.run_adb("dumpsys battery")
-            
-            if not output: return 0.0
-
-            for line in output.split('\n'):
-                line = line.strip()
-                if line.startswith("temperature:"):
-                    # Extract the number (e.g., "temperature: 350")
-                    raw_temp = int(line.split(":")[1].strip())
-                    return raw_temp / 10.0
-            return 0.0
-        except:
-            return 0.0
-
-    def set_gear(self, gear_level):
-        if gear_level == self.current_gear:
-            return 
-        
-        print(f"\nSHIFTING: Gear {self.current_gear} -> Gear {gear_level}")
-        settings = GEARS[gear_level]
-        
-        try:
-            self.run_adb(f"su -c 'echo {settings['prime']} > {CLUSTERS['prime']}'")
-            self.run_adb(f"su -c 'echo {settings['perf']} > {CLUSTERS['perf']}'")
-            self.run_adb(f"su -c 'echo {settings['eff']} > {CLUSTERS['eff']}'")
-        except:
-            print("FAILED to set frequency. Is the phone Rooted?")
-        
-        self.current_gear = gear_level
-
-# ==========================================
-# MODULE 2: AI BRAIN
+# PART 1: THE NEURAL BRAIN (Predictive AI)
 # ==========================================
 class NeuralBrain:
-    def __init__(self):
-        pass
+    def __init__(self, model_path="thermal_model.pkl"):
+        self.model = None
+        self.active = False
+        
+        try:
+            # CHANGED: Using joblib to load the model
+            with open(model_path, "rb") as f:
+                self.model = joblib.load(f)
+            self.active = True
+            print(f" [AI] Brain Loaded: {model_path}")
+        except FileNotFoundError:
+            print(f" [AI] CRITICAL: {model_path} not found! Running in dumb reactive mode.")
+        except Exception as e:
+            print(f" [AI] Error loading model: {e}")
 
-    def predict_future_temp(self, current_temp, recent_temps):
-        if len(recent_temps) < 10:
+    def predict_future(self, current_temp):
+        """
+        Input: Current Battery Temp (e.g., 38.5)
+        Output: Predicted Temp in 5 mins (e.g., 43.2)
+        """
+        if not self.active:
+            return current_temp # Fallback: Assume future = current (Reactive)
+
+        try:
+            # Reshape for sklearn: [[38.5]]
+            input_val = np.array([[current_temp]])
+            prediction = self.model.predict(input_val)
+            return float(prediction[0])
+        except Exception as e:
+            # If prediction fails (e.g. shape mismatch), stay safe and return current temp
             return current_temp
 
-        # Battery temp moves SLOWLY. 
-        start_avg = sum(recent_temps[-10:-8]) / 2.0
-        end_avg = sum(recent_temps[-2:]) / 2.0
+# ==========================================
+# PART 2: THE UNIVERSAL MECHANIC (Hardware)
+# ==========================================
+class UniversalHardware:
+    def __init__(self):
+        self.clusters = {} 
+        self.gears = {}    
         
-        velocity = (end_avg - start_avg) / 10.0
+        print(" [INIT] Starting Universal Neural Governor...")
+        self.check_adb()
+        self.kill_thermal_services()
+        self.detect_hardware()
+        self.calculate_gears()
         
-        # Physics Clamp
-        velocity = max(min(velocity, 0.15), -0.1)
+    def check_adb(self):
+        """Verifying ADB connection and Root access."""
+        try:
+            # Check connection
+            subprocess.check_output("adb devices", shell=True)
+            # Check Root
+            root_check = self.adb_command("id")
+            if "uid=0(root)" not in root_check:
+                print(" [ERROR] Root access missing! Please grant Root to Shell/ADB.")
+                print("         Run 'adb shell su' manually to trigger the popup.")
+                sys.exit(1)
+            print(" [OK] ADB Connected & Rooted.")
+        except Exception as e:
+            print(f" [FATAL] ADB Error: {e}")
+            sys.exit(1)
+
+    def adb_command(self, cmd):
+        """Executes a shell command with Root privileges."""
+        full_cmd = f'adb shell "su -c \'{cmd}\'"'
+        try:
+            result = subprocess.check_output(full_cmd, shell=True, stderr=subprocess.STDOUT)
+            return result.decode('utf-8').strip()
+        except subprocess.CalledProcessError as e:
+            return ""
+
+    def kill_thermal_services(self):
+        """The 'Hit List': Auto-kills known thermal managers."""
+        print(" [OP] Neutralizing System Thermal Managers...")
+        hit_list = [
+            "mi_thermald", "vendor.thermal-engine", "thermal-engine", 
+            "android.hardware.thermal@2.0-service", "android.hardware.thermal@2.0-service.qti",
+            "thermald", "triton"
+        ]
         
-        # Predict 30 seconds out
-        pred = current_temp + (velocity * 30)
-        return pred
+        for daemon in hit_list:
+            self.adb_command(f"stop {daemon}")
+            self.adb_command(f"killall {daemon}")
+            
+        print(" [OK] Thermal services suppressed.")
+
+    def detect_hardware(self):
+        """Scans /sys/devices to find CPU clusters and their limits."""
+        print(" [SCAN] Detecting CPU Topology...")
+        raw_policies = self.adb_command("ls -d /sys/devices/system/cpu/cpufreq/policy*")
+        
+        if not raw_policies:
+            print(" [ERROR] No CPU policies found! Is the kernel standard?")
+            sys.exit(1)
+            
+        policy_paths = raw_policies.splitlines()
+        
+        for path in policy_paths:
+            policy_name = path.split("/")[-1]
+            freqs_str = self.adb_command(f"cat {path}/scaling_available_frequencies")
+            if not freqs_str:
+                continue              
+            freqs = sorted([int(f) for f in freqs_str.split() if f.isdigit()])
+            
+            self.clusters[policy_name] = {
+                "path": path,
+                "freqs": freqs
+            }
+            print(f"    Found {policy_name}: {len(freqs)} steps ({freqs[0]//1000}MHz - {freqs[-1]//1000}MHz)")
+
+    def calculate_gears(self):
+        """Dynamically calculates 4 Gear levels based on the specific hardware found."""
+        print(" [CALC] Calculating Gear Ratios...")
+        for policy, data in self.clusters.items():
+            freqs = data['freqs']
+            count = len(freqs)         
+            self.gears[policy] = {
+                1: freqs[0],                # Gear 1: Min (Cool Down)
+                2: freqs[int(count * 0.33)],# Gear 2: Braking
+                3: freqs[int(count * 0.66)],# Gear 3: Sustainable
+                4: freqs[-1]                # Gear 4: Turbo
+            }
+        print(" [OK] Gears Calibrated.")
+
+    def apply_gear(self, gear_level):
+        """Applies the gear to ALL clusters using schedutil + hard clamping."""
+        for policy, data in self.clusters.items():
+            base_path = data['path']
+            target_freq = self.gears[policy][gear_level]
+            
+            commands = [
+                f"echo schedutil > {base_path}/scaling_governor",
+                f"echo {data['freqs'][0]} > {base_path}/scaling_min_freq", # Reset floor first
+                f"echo {target_freq} > {base_path}/scaling_max_freq",      # Set Ceiling
+                f"echo {target_freq} > {base_path}/scaling_min_freq"       # Raise Floor to match Ceiling
+            ]
+            full_cmd = " && ".join(commands)
+            self.adb_command(full_cmd)
+
+    def get_battery_temp(self):
+        """Reads battery temp. Universal fallback logic."""
+        res = self.adb_command("dumpsys battery | grep temperature")
+        if res:
+            try:
+                temp_raw = int(res.split(":")[1].strip())
+                return temp_raw / 10.0
+            except: pass
+        
+        # Fallback to sysfs
+        zones = ["thermal_zone0", "thermal_zone1", "thermal_zone2"]
+        for zone in zones:
+            res = self.adb_command(f"cat /sys/class/thermal/{zone}/type")
+            if "battery" in res.lower():
+                try:
+                    temp_str = self.adb_command(f"cat /sys/class/thermal/{zone}/temp")
+                    return int(temp_str) / 1000.0
+                except: continue
+        return 0.0
 
 # ==========================================
-# MAIN LOOP
+# PART 3: THE CONTROLLER (Main Loop)
 # ==========================================
-def main():
-    phone = PhoneInterface()
-    brain = NeuralBrain()
-    history = []
-    
-    last_shift_time = 0
-    lock_duration = 60.0 
-    
-    print(f"\nNEURAL GOVERNOR: BATTERY EDITION | Limits: 38C / 41C / 44C")
-    print("----------------------------------------------------------")
-    
-    try:
+class NeuralGovernor:
+    def __init__(self):
+        print("\n=== NEURAL GOVERNOR INITIATING ===")
+        self.brain = NeuralBrain()      # The AI
+        self.mech = UniversalHardware() # The Hardware
+        
+        # Stability Settings
+        self.current_gear = 4
+        self.last_shift_time = 0
+        self.shift_cooldown = 3.0 # Seconds between shifts
+
+    def run(self):
+        print(" [START] Active. Monitoring Battery Temps...")
+        
         while True:
-            temp = phone.get_temp()
-            history.append(temp)
-            if len(history) > 30: history.pop(0)
+            # 1. Sense (Real World)
+            real_temp = self.mech.get_battery_temp()
             
-            future_temp = brain.predict_future_temp(temp, history)
+            # 2. Think (Predictive AI)
+            pred_temp = self.brain.predict_future(real_temp)
             
-            # DECISION LOGIC (BATTERY SAFETY)
-            recommended_gear = 4
+            # 3. Decide (Based on Prediction)
+            target_gear = 4 # Default to Turbo
+            if pred_temp > 42.0:
+                target_gear = 1  # Emergency
+            elif pred_temp > 39.0:
+                target_gear = 2  # Braking
+            elif pred_temp > 37.0:
+                target_gear = 3  # Sustainable
+            else:
+                target_gear = 4  # Turbo
+
+            # 4. Act (Stability Logic)
+            self.execute_shift(real_temp, pred_temp, target_gear)
             
-            if future_temp > 44.0:    # Danger
-                recommended_gear = 1
-            elif future_temp > 41.0:  # Hot
-                recommended_gear = 2
-            elif future_temp > 38.0:  # Warm
-                recommended_gear = 3
-            else:                     # Cool
-                recommended_gear = 4
+            time.sleep(1.0)
+
+    def execute_shift(self, real, pred, target):
+        now = time.time()
+        time_since_shift = now - self.last_shift_time
+        
+        # Update Status Line (Overwrites previous line)
+        status = f"\r [REAL: {real}°C] -> [AI PRED: {pred:.1f}°C] | Gear: {self.current_gear}"
+        sys.stdout.write(status + " " * 10) 
+        sys.stdout.flush()
+
+        # RULE 1: Only act if the gear needs to change
+        if target != self.current_gear:
             
-            # ACT
-            current_time = time.time()
-            time_since_shift = current_time - last_shift_time
-            is_locked = time_since_shift < lock_duration
-            is_emergency = recommended_gear == 1
+            # RULE 2: PANIC OVERRIDE (Safety First)
+            is_emergency = (target == 1)
             
-            if is_emergency or not is_locked:
-                if recommended_gear != phone.current_gear:
-                    phone.set_gear(recommended_gear)
-                    last_shift_time = current_time
-            
-            # DASHBOARD
-            status_text = "LOCKED" if is_locked else "READY"
-            
-            sys.stdout.write(f"\rBATTERY: {temp:.1f}C | PRED(30s): {future_temp:.1f}C | GEAR: {phone.current_gear} | {status_text}   ")
-            sys.stdout.flush()
-            
-            time.sleep(2.0)
-            
-    except KeyboardInterrupt:
-        print("\n\nSTOPPING. Resetting to Turbo.")
-        phone.set_gear(4)
+            # RULE 3: COOLDOWN CHECK
+            if time_since_shift > self.shift_cooldown or is_emergency:
+                print(f"\n [SHIFT] AI Predicted {pred:.1f}°C. Shifting Gear {self.current_gear} -> {target}")
+                self.mech.apply_gear(target)
+                self.current_gear = target
+                self.last_shift_time = now
 
 if __name__ == "__main__":
-    main()
+    app = NeuralGovernor()
+    app.run()
