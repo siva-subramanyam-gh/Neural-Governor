@@ -1,4 +1,4 @@
-Markdown# Neural Governor: Adaptive Thermal Management via Reinforcement Learning
+Neural Governor: Adaptive Thermal Management via Reinforcement Learning
 
 ![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
 ![Platform](https://img.shields.io/badge/Platform-Android%20(Rooted)-green)
@@ -31,16 +31,8 @@ Standard user-space tools cannot stop the Kernel from throttling. We bypass this
 ### 3. Research Data Logger
 A lightweight, low-overhead logging tool (`logger.py`) used to generate comparative datasets (Stock vs. Neural) for academic analysis.
 
-## 📂 Project Structure
-
 ```text
-/Neural-Governor
-│
-├── neural_governor.py  # The Main Autonomous Agent (RL + Hardware Control)
-├── logger.py           # Data Acquisition Tool for Benchmarking
-├── q_table.pkl         # The "Brain" (Learned Knowledge - Ignored by Git)
-├── .gitignore          # Rules to keep repo clean
-└── README.md           # Research Documentation
+
 🛠️ Installation & UsagePrerequisites:An Android Device with Root Access (Magisk/KernelSU).Termux installed.1. Setup EnvironmentOpen Termux and run:Bash# Update and install Python/Root tools
 pkg update && pkg upgrade
 pkg install python tsu
@@ -51,4 +43,4 @@ pip install numpy
 python neural_governor.py
 Note: Grant the "Superuser" request on your phone screen if prompted.3. Run the Data Logger (For Benchmarking)To collect data for graphs (Time vs. Temp vs. Freq):Bashtsu
 python logger.py my_benchmark_results.csv
-📊 MethodologyThe agent operates on a 1-second control loop:SENSE: Read battery_temp from /sys/class/power_supply.LEARN: Calculate the reward for the previous action. (Did the temp spike? Did we stay cool?). Update the Q-Table.DECIDE: Select the next Gear (1-4) based on the Q-Table (Exploitation) or random chance (Exploration, $\epsilon=0.1$).ACT: Apply the Gear using the UniversalHardware interface (chmod locking).GearDescriptionCPU CeilingRefresh RateUse Case1SaverMin Freq60HzIdle / Emergency2Cruise40% Freq60HzLight Usage3Balanced70% Freq120HzSustained Gaming4TurboMax Freq120HzPeak Performance⚠️ DisclaimerRequires Root. This software modifies system-level kernel parameters. While the RL agent includes strict safety limits (>43°C Force Downshift), the author is not responsible for hardware damage or instability. Use at your own risk.🤝 ContributingThis is an active research project.Issue Tracking: Please report specific device paths that fail detection.Pull Requests: Algorithm improvements to the Reward Function are welcome.Maintained by [Your Name]
+📊 MethodologyThe agent operates on a 1-second control loop:SENSE: Read battery_temp from /sys/class/power_supply.LEARN: Calculate the reward for the previous action. (Did the temp spike? Did we stay cool?). Update the Q-Table.DECIDE: Select the next Gear (1-4) based on the Q-Table (Exploitation) or random chance (Exploration, $\epsilon=0.1$).ACT: Apply the Gear using the UniversalHardware interface (chmod locking).GearDescriptionCPU CeilingRefresh RateUse Case1SaverMin Freq60HzIdle / Emergency2Cruise40% Freq60HzLight Usage3Balanced70% Freq120HzSustained Gaming4TurboMax Freq120HzPeak Performance⚠️ DisclaimerRequires Root. This software modifies system-level kernel parameters. While the RL agent includes strict safety limits (>43°C Force Downshift), the author is not responsible for hardware damage or instability. Use at your own risk.🤝 ContributingThis is an active research project.Issue Tracking: Please report specific device paths that fail detection.Pull Requests: Algorithm improvements to the Reward Function are welcome.Maintained by Siva Subramanyam Ghanta
