@@ -31,6 +31,7 @@ Standard user-space tools cannot stop the Kernel from throttling. We bypass this
 ### 3. Research Data Logger
 A lightweight, low-overhead logging tool (`logger.py`) used to generate comparative datasets (Stock vs. Neural) for academic analysis.
 
+### 4. Installation Procedure
 ```text
 
 🛠️ Installation & UsagePrerequisites:An Android Device with Root Access (Magisk/KernelSU).Termux installed.1. Setup EnvironmentOpen Termux and run:Bash# Update and install Python/Root tools
